@@ -1,6 +1,3 @@
-{% extends "base.html" %}
-
-{% block content %}
 <h3>public memos</h3>
 <p id="pager">
   recent {{ page * 100 + 1 }} - {{ page * 100 + 100 }} / total <span id="total">{{ total }}</span>
@@ -12,4 +9,3 @@
 </li>
 {% endfor %}
 </ul>
-{% endblock %}

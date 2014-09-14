@@ -7,6 +7,7 @@ except ImportError:
     import pymysql as MySQLdb
     from pymysql.cursors import DictCursor
 
+import flask
 from flask import (
     Flask, request, redirect, session, url_for, abort,
     render_template, _app_ctx_stack, Response,
@@ -15,7 +16,7 @@ from flask import (
 
 import memcache
 from flask_memcache_session import Session
-from werkzeug.contrib.fixers import ProxyFix
+#from werkzeug.contrib.fixers import ProxyFix
 
 import json, os, hashlib, tempfile, subprocess
 import misaka
@@ -28,7 +29,7 @@ app = Flask(__name__, static_url_path='')
 app.cache = memcache.Client(['localhost:11211'], debug=0)
 app.session_interface = Session()
 app.session_cookie_name = "isucon_session_python"
-app.wsgi_app = ProxyFix(app.wsgi_app)
+#app.wsgi_app = ProxyFix(app.wsgi_app)
 
 def load_config():
     global config
@@ -52,17 +53,29 @@ def get_user():
     user_id = session.get('user_id')
     user = None
     if user_id:
-        cur = get_db().cursor()
-        cur.execute("SELECT * FROM users WHERE id=%s", (user_id,))
-        user = cur.fetchone()
-        cur.close()
+        user = get_user_by_id(user_id)
     if user:
         @after_this_request
         def add_header(response):
             response.headers['Cache-Control'] = 'private'
             return response
-
     return user
+
+
+_userid_cache = {}
+
+def get_user_by_id(user_id):
+    try:
+        return _userid_cache[user_id]
+    except KeyError:
+        pass
+    cur  = get_db().cursor()
+    cur.execute('SELECT * FROM users WHERE id=%s', (user_id,))
+    cur.close()
+    user = cur.fetchone()
+    _userid_cache[user_id] = user
+    return user
+
 
 def anti_csrf():
     if request.form['sid'] != session['token']:
@@ -72,11 +85,18 @@ def anti_csrf():
 def require_user(user):
     if not user:
         redirect(url_for("top_page"))
-        abort()
+        abort(403)
 
 
-def gen_markdown(md):
-    return markdown.render(md)
+
+def gen_markdown(memo_id, md):
+    key = ("memo:%s" % (memo_id,)).encode('utf-8')
+    html = app.cache.get(key)
+    if html:
+        return cached.decode('utf-8')
+    html = markdown.render(md)
+    aoe.cache.set(key, html)
+    return html
     #temp = tempfile.NamedTemporaryFile()
     #temp.write(bytes(md, 'UTF-8'))
     #temp.flush()
@@ -114,13 +134,14 @@ def top_page():
 
     cur.close()
 
-    return render_template(
+    # TODO: cache
+    content = flask.Markup(render_template(
         'index.html',
         total=total,
         memos=memos,
-        page=0,
-        user=user
-    )
+        page=1,
+    ))
+    return render_template('frame.html', user=user, content=content)
 
 @app.route("/recent/<int:page>")
 def recent(page):
@@ -141,13 +162,14 @@ def recent(page):
 
     cur.close()
 
-    return render_template(
+    # TODO: cache
+    content = flask.Markup(render_template(
         'index.html',
         total=total,
         memos=memos,
         page=page,
-        user=user
-    )
+    ))
+    return render_template('frame.html', user=user, content=content)
 
 
 @app.route("/mypage")
@@ -184,9 +206,9 @@ def signin_post():
     if user and user["password"] == hashlib.sha256(bytes(user["salt"] + password, 'UTF-8')).hexdigest():
         session["user_id"] = user["id"]
         session["token"] = hashlib.sha256(os.urandom(40)).hexdigest()
-        cur.execute("UPDATE users SET last_access=now() WHERE id=%s", (user["id"],))
-        cur.close()
-        db.commit()
+        # cur.execute("UPDATE users SET last_access=now() WHERE id=%s", (user["id"],))
+        # cur.close()
+        # db.commit()
         return redirect(url_for("mypage"))
     else:
         return render_template('signin.html', user=None)
@@ -218,9 +240,8 @@ def memo(memo_id):
         if not user or user["id"] != memo["user"]:
             abort(404)
 
-    cur.execute('SELECT username FROM users WHERE id=%s', (memo["user"],))
-    memo["username"] = cur.fetchone()["username"]
-    memo["content_html"] = gen_markdown(memo["content"])
+    memo["username"] = get_user_by_id(memo['user'])["username"]
+    memo["content_html"] = gen_markdown(memo['id'], memo["content"])
     if user and user["id"] == memo["user"]:
         cond = ""
     else:
