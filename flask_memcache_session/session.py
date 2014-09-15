@@ -12,12 +12,7 @@ class Session(SessionInterface):
         if self.cookie_session_id is None:
             self.cookie_session_id = binascii.hexlify(os.urandom(40)).decode('ascii')
             self.session_new = True
-        self.memcache_session_id = '@'.join(
-                    [
-                        request.remote_addr,
-                        self.cookie_session_id
-                    ]
-                )
+        self.memcache_session_id = str(self.cookie_session_id)
         app.logger.debug('Open session %s', self.memcache_session_id)
         session = app.cache.get(self.memcache_session_id) or {}
         app.cache.set(self.memcache_session_id, session)
