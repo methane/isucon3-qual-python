@@ -26,6 +26,7 @@ markdown = misaka.Markdown(misaka.HtmlRenderer())
 config = {}
 
 app = Flask(__name__, static_url_path='')
+app.debug = False
 app.cache = memcache.Client(['localhost:11211'], debug=0)
 app.session_interface = Session()
 app.session_cookie_name = "isucon_session_python"
@@ -45,7 +46,13 @@ def connect_db():
     username = config['database']['username']
     password = config['database']['password']
     dbname   = config['database']['dbname']
-    db = MySQLdb.connect(host=host, port=port, db=dbname, user=username, passwd=password, cursorclass=DictCursor, charset="utf8")
+    db = MySQLdb.connect(host=host,
+            port=port,
+            db=dbname,
+            user=username,
+            passwd=password,
+            cursorclass=DictCursor,
+            charset="utf8")
     return db
 
 
@@ -66,14 +73,12 @@ _userid_cache = {}
 
 def get_user_by_id(user_id):
     user = _userid_cache.get(user_id)
-    print(user_id, user)
     if user:
         return user
     cur  = get_db().cursor()
     cur.execute('SELECT * FROM users WHERE id=%s', (user_id,))
     user = cur.fetchone()
     cur.close()
-    print(user_id, user)
     _userid_cache[user_id] = user
     return user
 
@@ -91,19 +96,20 @@ def require_user(user):
 
 
 def gen_markdown(memo_id, md):
-    #key = ("memo:%s" % (memo_id,))
-    #html = app.cache.get(key)
-    #if html:
-    #    return html
-    #html = markdown.render(md)
-    #app.cache.set(key, html)
-    #return html
-    temp = tempfile.NamedTemporaryFile()
-    temp.write(bytes(md, 'UTF-8'))
-    temp.flush()
-    html = subprocess.getoutput("../bin/markdown %s" % temp.name)
-    temp.close()
+    key = "memo:%s" % (memo_id,)
+    #print("key=", key)
+    html = app.cache.get(key)
+    if html:
+        return html
+    html = markdown.render(md)
+    app.cache.set(key, html)
     return html
+    #temp = tempfile.NamedTemporaryFile()
+    #temp.write(bytes(md, 'UTF-8'))
+    #temp.flush()
+    #html = subprocess.getoutput("../bin/markdown %s" % temp.name)
+    #temp.close()
+    #return html
 
 def get_db():
     top = _app_ctx_stack.top
