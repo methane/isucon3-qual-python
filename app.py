@@ -65,14 +65,15 @@ def get_user():
 _userid_cache = {}
 
 def get_user_by_id(user_id):
-    try:
-        return _userid_cache[user_id]
-    except KeyError:
-        pass
+    user = _userid_cache.get(user_id)
+    print(user_id, user)
+    if user:
+        return user
     cur  = get_db().cursor()
     cur.execute('SELECT * FROM users WHERE id=%s', (user_id,))
-    cur.close()
     user = cur.fetchone()
+    cur.close()
+    print(user_id, user)
     _userid_cache[user_id] = user
     return user
 
@@ -90,19 +91,19 @@ def require_user(user):
 
 
 def gen_markdown(memo_id, md):
-    key = ("memo:%s" % (memo_id,)).encode('utf-8')
-    html = app.cache.get(key)
-    if html:
-        return cached.decode('utf-8')
-    html = markdown.render(md)
-    aoe.cache.set(key, html)
-    return html
-    #temp = tempfile.NamedTemporaryFile()
-    #temp.write(bytes(md, 'UTF-8'))
-    #temp.flush()
-    #html = subprocess.getoutput("../bin/markdown %s" % temp.name)
-    #temp.close()
+    #key = ("memo:%s" % (memo_id,))
+    #html = app.cache.get(key)
+    #if html:
+    #    return html
+    #html = markdown.render(md)
+    #app.cache.set(key, html)
     #return html
+    temp = tempfile.NamedTemporaryFile()
+    temp.write(bytes(md, 'UTF-8'))
+    temp.flush()
+    html = subprocess.getoutput("../bin/markdown %s" % temp.name)
+    temp.close()
+    return html
 
 def get_db():
     top = _app_ctx_stack.top
