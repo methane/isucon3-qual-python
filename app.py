@@ -1,11 +1,7 @@
 from __future__ import with_statement
 
-try:
-    import MySQLdb
-    from MySQLdb.cursors import DictCursor
-except ImportError:
-    import pymysql as MySQLdb
-    from pymysql.cursors import DictCursor
+import MySQLdb
+from MySQLdb.cursors import DictCursor
 
 import flask
 from flask import (
@@ -15,12 +11,14 @@ from flask import (
 )
 
 import memcache
+from redis import StrictRedis
 from flask_memcache_session import Session
 #from werkzeug.contrib.fixers import ProxyFix
 
-import json, os, hashlib, tempfile, subprocess
+import json, os, hashlib, tempfile, subprocess, time
 import misaka
 
+redis = StrictRedis()
 markdown = misaka.Markdown(misaka.HtmlRenderer())
 
 config = {}
@@ -94,7 +92,6 @@ def require_user(user):
         abort(403)
 
 
-
 def gen_markdown(memo_id, md):
     key = "memo:%s" % (memo_id,)
     #print("key=", key)
@@ -125,57 +122,43 @@ def close_db_connection(exception):
         top.db.close()
 
 
-@app.route("/")
-def top_page():
-    user = get_user()
+def get_memos(page):
+    if page==0:
+        content = app.cache.get('page:0')
+        if content:
+            return content
 
-    cur = get_db().cursor()
-    cur.execute('SELECT count(*) AS c FROM memos WHERE is_private=0')
-    total = cur.fetchone()['c']
+    total = redis.llen('memos')
+    start = (page+1)*(-100)-1
+    end = (page)*(-100)-1
+    memos = redis.lrange('memos', start, end)
 
-    cur.execute("SELECT * FROM memos WHERE is_private=0 ORDER BY created_at DESC, id DESC LIMIT 100")
-    memos = cur.fetchall()
-    for memo in memos:
-        cur.execute('SELECT username FROM users WHERE id=%s', (memo["user"],))
-        memo['username'] = cur.fetchone()['username']
-
-    cur.close()
-
-    # TODO: cache
-    content = flask.Markup(render_template(
-        'index.html',
-        total=total,
-        memos=memos,
-        page=1,
-    ))
-    return render_template('frame.html', user=user, content=content)
-
-@app.route("/recent/<int:page>")
-def recent(page):
-    user = get_user()
-
-    cur = get_db().cursor()
-    cur.execute('SELECT count(*) AS c FROM memos WHERE is_private=0')
-    total = cur.fetchone()['c']
-
-    cur.execute("SELECT * FROM memos WHERE is_private=0 ORDER BY created_at DESC, id DESC LIMIT 100 OFFSET " + str(page * 100))
-    memos = cur.fetchall()
-    if len(memos) == 0:
+    if not memos:
         abort(404)
 
-    for memo in memos:
-        cur.execute('SELECT username FROM users WHERE id=%s', (memo["user"],))
-        memo['username'] = cur.fetchone()['username']
-
-    cur.close()
-
-    # TODO: cache
+    memos.reverse()
+    memos = flask.Markup(''.join(m.decode('utf-8') for m in memos))
     content = flask.Markup(render_template(
         'index.html',
         total=total,
         memos=memos,
         page=page,
     ))
+    if page==0:
+        app.cache.set('page:0', content, time=1)
+    return content
+
+
+@app.route("/")
+def top_page():
+    user = get_user()
+    content = get_memos(0)
+    return render_template('frame.html', user=user, content=content)
+
+@app.route("/recent/<int:page>")
+def recent(page):
+    user = get_user()
+    content = get_memos(page)
     return render_template('frame.html', user=user, content=content)
 
 
@@ -279,26 +262,51 @@ def memo_post():
     user = get_user()
     require_user(user)
     anti_csrf()
+    content = request.form["content"]
+    created_at=time.strftime('%Y-%m-%d %H:%M:%S')
 
+    redis.rpush
     db  = get_db()
     cur = db.cursor()
     cur.execute(
-        "INSERT INTO memos (user, content, is_private, created_at) VALUES (%s, %s, %s, now())",
-        ( user["id"],
-          request.form["content"],
-          int(request.form.get("is_private") or 0)
-        )
+        "INSERT INTO memos (user, content, is_private, created_at) VALUES (%s, %s, %s, %s)",
+        (user["id"], content, int(request.form.get("is_private") or 0), created_at)
     )
     memo_id = db.insert_id()
+    s = flask.render_template("memo_s.html",
+                              memo_id=memo_id,
+                              content=content,
+                              username=user['username'],
+                              created_at=created_at,
+                              )
+    redis.rpush('memos', s.encode('utf-8'))
     cur.close()
     db.commit()
-
     return redirect(url_for('memo', memo_id=memo_id))
 
+def init_memos():
+    with app.app_context():
+        redis.delete('memos')
+        cur  = get_db().cursor()
+        cur.execute('SELECT id, user, content, is_private, created_at, updated_at FROM memos WHERE is_private=0 ORDER BY created_at')
+        memos = cur.fetchall()
+        for memo in memos:
+            username = get_user_by_id(memo['user'])['username']
+            s = flask.render_template("memo_s.html",
+                                      memo_id=memo['id'],
+                                      content=memo['content'],
+                                      username=username,
+                                      created_at=memo['created_at'],
+                                      )
+            redis.rpush('memos', s.encode('utf-8'))
 
 if __name__ == "__main__":
+    import sys
     load_config()
-    port = int(os.environ.get("PORT", '5000'))
-    app.run(debug=1, host='0.0.0.0', port=port)
+    if sys.argv[-1] == 'init':
+        init_memos()
+    else:
+        port = int(os.environ.get("PORT", '5000'))
+        app.run(debug=1, host='0.0.0.0', port=port)
 else:
     load_config()
