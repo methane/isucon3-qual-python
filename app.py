@@ -129,7 +129,7 @@ def get_memos(page):
             return content
 
     total = redis.llen('memos')
-    start = (page+1)*(-100)-1
+    start = (page+1)*(-100)
     end = (page)*(-100)-1
     memos = redis.lrange('memos', start, end)
 
@@ -137,7 +137,7 @@ def get_memos(page):
         abort(404)
 
     memos.reverse()
-    memos = flask.Markup(''.join(m.decode('utf-8') for m in memos))
+    memos = flask.Markup('\n'.join(m.decode('utf-8') for m in memos))
     content = flask.Markup(render_template(
         'index.html',
         total=total,
