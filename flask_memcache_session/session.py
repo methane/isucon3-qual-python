@@ -31,4 +31,4 @@ class Session(SessionInterface):
             response.set_cookie(app.session_cookie_name, self.cookie_session_id, path=path,
                                 expires=expires, httponly=httponly,
                                 secure=secure, domain=domain)
-            app.logger.debug('Set session %s with %s', self.memcache_session_id, session)
+            #app.logger.debug('Set session %s with %s', self.memcache_session_id, session)

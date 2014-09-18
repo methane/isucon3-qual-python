@@ -31,6 +31,9 @@ app.session_interface = Session()
 app.session_cookie_name = "isucon_session_python"
 #app.wsgi_app = ProxyFix(app.wsgi_app)
 
+with open('templates/frame_nouser.html') as f:
+    FRAME_A, FRAME_B = f.read().split('{{ content }}')
+
 def load_config():
     global config
     print("Loading configuration")
@@ -153,12 +156,16 @@ def get_memos(page):
 def top_page():
     user = get_user()
     content = get_memos(0)
+    if not user:
+        return FRAME_A + content + FRAME_B
     return render_template('frame.html', user=user, content=content)
 
 @app.route("/recent/<int:page>")
 def recent(page):
     user = get_user()
     content = get_memos(page)
+    if not user:
+        return FRAME_A + content + FRAME_B
     return render_template('frame.html', user=user, content=content)
 
 
@@ -239,15 +246,16 @@ def memo(memo_id):
     memos = []
     older = None
     newer = None
-    cur.execute("SELECT * FROM memos WHERE user=%s " + cond + " ORDER BY created_at", (memo["user"],))
-    memos = cur.fetchall()
-    for i in range(len(memos)):
-        if memos[i]["id"] == memo["id"]:
-            if i > 0:
-                older = memos[i - 1]
-            if i < len(memos) - 1:
-                newer = memos[i + 1]
+    cur.execute("SELECT id FROM memos WHERE user=%s " + cond + " AND id<%s ORDER BY id DESC LIMIT 1", (memo["user"], memo['id']))
+    older_memos = cur.fetchall()
+    cur.execute("SELECT id FROM memos WHERE user=%s " + cond + " AND id>%s ORDER BY id LIMIT 1", (memo["user"], memo['id']))
+    newer_memos = cur.fetchall()
     cur.close()
+
+    if older_memos:
+        older = older_memos[0]
+    if newer_memos:
+        newer = newer_memos[0]
 
     return render_template(
         "memo.html",
