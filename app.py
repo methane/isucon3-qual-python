@@ -10,6 +10,7 @@ from flask import (
     after_this_request,
 )
 
+import meinheld.server
 import memcache
 from redis import StrictRedis
 from flask_memcache_session import Session
@@ -123,10 +124,10 @@ def close_db_connection(exception):
 
 
 def get_memos(page):
-    if page==0:
-        content = app.cache.get('page:0')
-        if content:
-            return content
+    cache_key = 'page:%d' % (page,)
+    content = app.cache.get(cache_key)
+    if content:
+        return content
 
     total = redis.llen('memos')
     start = (page+1)*(-100)
@@ -137,15 +138,14 @@ def get_memos(page):
         abort(404)
 
     memos.reverse()
-    memos = flask.Markup('\n'.join(m.decode('utf-8') for m in memos))
+    memos = flask.Markup(b'\n'.join(memos).decode('utf-8'))
     content = flask.Markup(render_template(
         'index.html',
         total=total,
         memos=memos,
         page=page,
     ))
-    if page==0:
-        app.cache.set('page:0', content, time=1)
+    app.cache.set(cache_key, content, time=1)
     return content
 
 
@@ -262,6 +262,7 @@ def memo_post():
     user = get_user()
     require_user(user)
     anti_csrf()
+    private = int(request.form.get("is_private") or 0)
     content = request.form["content"]
     created_at=time.strftime('%Y-%m-%d %H:%M:%S')
 
@@ -270,18 +271,21 @@ def memo_post():
     cur = db.cursor()
     cur.execute(
         "INSERT INTO memos (user, content, is_private, created_at) VALUES (%s, %s, %s, %s)",
-        (user["id"], content, int(request.form.get("is_private") or 0), created_at)
+        (user["id"], content, private, created_at)
     )
     memo_id = db.insert_id()
-    s = flask.render_template("memo_s.html",
-                              memo_id=memo_id,
-                              content=content,
-                              username=user['username'],
-                              created_at=created_at,
-                              )
-    redis.rpush('memos', s.encode('utf-8'))
     cur.close()
     db.commit()
+    if not private:
+        s = flask.render_template("memo_s.html",
+                                  memo_id=memo_id,
+                                  content=content,
+                                  username=user['username'],
+                                  created_at=created_at,
+                                  )
+        redis.rpush('memos', s.encode('utf-8'))
+    #meinheld.server.sleep(1)
+    gen_markdown(memo_id, content)
     return redirect(url_for('memo', memo_id=memo_id))
 
 def init_memos():

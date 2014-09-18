@@ -23,9 +23,9 @@ body {
 <a class="brand" href="/">Isucon3</a>
 <div class="nav-collapse">
 <ul class="nav">
-<li><a href="{{ url_for('top_page', _external=True) }}">Home</a></li>
+<li><a href="/">Home</a></li>
 {% if user %}
-<li><a href="{{ url_for('mypage', _external=True) }}">MyPage</a></li>
+<li><a href="/mypage">MyPage</a></li>
 <li>
   <form action="/signout" method="post">
     <input type="hidden" name="sid" value="{{ session.get('token') }}">
@@ -33,7 +33,7 @@ body {
   </form>
 </li>
 {% else %}
-<li><a href="{{ url_for('signin', _external=True) }}">SignIn</a></li>
+<li><a href="/signin">SignIn</a></li>
 {% endif %}
 </ul>
 </div> <!--/.nav-collapse -->
@@ -48,7 +48,7 @@ body {
 
 </div> <!-- /container -->
 
-<script type="text/javascript" src="{{ url_for('static', filename='/js/jquery.min.js', _external=True) }}"></script>
-<script type="text/javascript" src="{{ url_for('static', filename='/js/bootstrap.min.js', _external=True) }}"></script>
+<script type="text/javascript" src="/js/jquery.min.js"></script>
+<script type="text/javascript" src="/js/bootstrap.min.js"></script>
 </body>
 </html>

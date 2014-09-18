@@ -19,13 +19,15 @@ class Session(SessionInterface):
         return self.session_class(session)
 
     def save_session(self, app, session, response):
-        expires = self.get_expiration_time(app, session)
-        domain = self.get_cookie_domain(app)
-        path = self.get_cookie_path(app)
-        httponly = self.get_cookie_httponly(app)
-        secure = self.get_cookie_secure(app)
+        if not session:
+            return
         app.cache.set(self.memcache_session_id, session)
-        if self.session_new:
+        if self.session_new and session:
+            expires = self.get_expiration_time(app, session)
+            domain = self.get_cookie_domain(app)
+            path = self.get_cookie_path(app)
+            httponly = self.get_cookie_httponly(app)
+            secure = self.get_cookie_secure(app)
             response.set_cookie(app.session_cookie_name, self.cookie_session_id, path=path,
                                 expires=expires, httponly=httponly,
                                 secure=secure, domain=domain)

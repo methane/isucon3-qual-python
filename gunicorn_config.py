@@ -6,6 +6,7 @@ keepalive = 120
 worker_class = "meinheld.gmeinheld.MeinheldWorker"
 port = os.environ.get("PORT", '5000')
 bind = '0.0.0.0:' + port
+bind = 'unix:/tmp/gunicorn.sock'
 enable_stdio_inheritance = True
 
 
