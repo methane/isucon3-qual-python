@@ -266,7 +266,6 @@ def memo_post():
     content = request.form["content"]
     created_at=time.strftime('%Y-%m-%d %H:%M:%S')
 
-    redis.rpush
     db  = get_db()
     cur = db.cursor()
     cur.execute(
@@ -284,7 +283,6 @@ def memo_post():
                                   created_at=created_at,
                                   )
         redis.rpush('memos', s.encode('utf-8'))
-    #meinheld.server.sleep(1)
     gen_markdown(memo_id, content)
     return redirect(url_for('memo', memo_id=memo_id))
 
