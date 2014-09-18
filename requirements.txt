@@ -1,0 +1,7 @@
+mysqlclient
+redis
+https://github.com/mopemope/meinheld/archive/master.tar.gz
+misaka
+Flask
+gunicorn
+python3-memcached
