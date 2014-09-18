@@ -288,11 +288,16 @@ def memo_post():
 
 def init_memos():
     with app.app_context():
+        url_list = open('/tmp/urls.txt', 'w')
         redis.delete('memos')
         cur  = get_db().cursor()
         cur.execute('SELECT id, user, content, is_private, created_at, updated_at FROM memos WHERE is_private=0 ORDER BY created_at')
         memos = cur.fetchall()
         for memo in memos:
+            if memo['is_private']:
+                gen_markdown(memo['id'], memo['content'])
+                continue
+
             username = get_user_by_id(memo['user'])['username']
             s = flask.render_template("memo_s.html",
                                       memo_id=memo['id'],
@@ -301,6 +306,8 @@ def init_memos():
                                       created_at=memo['created_at'],
                                       )
             redis.rpush('memos', s.encode('utf-8'))
+            print('http://localhost/memo/%s' % (memo['id'],), file=url_list)
+        url_list.close()
 
 if __name__ == "__main__":
     import sys
