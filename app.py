@@ -54,7 +54,8 @@ def connect_db():
             user=username,
             passwd=password,
             cursorclass=DictCursor,
-            charset="utf8")
+            charset="utf8",
+            autocommit=True)
     return db
 
 
@@ -98,32 +99,20 @@ def require_user(user):
 
 def gen_markdown(memo_id, md):
     key = "memo:%s" % (memo_id,)
-    #print("key=", key)
     html = app.cache.get(key)
     if html:
         return html
     html = markdown.render(md)
     app.cache.set(key, html)
     return html
-    #temp = tempfile.NamedTemporaryFile()
-    #temp.write(bytes(md, 'UTF-8'))
-    #temp.flush()
-    #html = subprocess.getoutput("../bin/markdown %s" % temp.name)
-    #temp.close()
-    #return html
 
+
+_db = None
 def get_db():
-    top = _app_ctx_stack.top
-    if not hasattr(top, 'db'):
-        top.db = connect_db()
-    return top.db
-
-
-@app.teardown_appcontext
-def close_db_connection(exception):
-    top = _app_ctx_stack.top
-    if hasattr(top, 'db'):
-        top.db.close()
+    global _db
+    if _db is None:
+        _db = connect_db()
+    return _db
 
 
 def get_memos(page):
@@ -193,7 +182,6 @@ def signin():
 
 @app.route("/signin", methods=['POST'])
 def signin_post():
-
     db  = get_db()
     cur = db.cursor()
     username = request.form['username']
@@ -203,9 +191,6 @@ def signin_post():
     if user and user["password"] == hashlib.sha256(bytes(user["salt"] + password, 'UTF-8')).hexdigest():
         session["user_id"] = user["id"]
         session["token"] = hashlib.sha256(os.urandom(40)).hexdigest()
-        # cur.execute("UPDATE users SET last_access=now() WHERE id=%s", (user["id"],))
-        # cur.close()
-        # db.commit()
         return redirect(url_for("mypage"))
     else:
         return render_template('signin.html', user=None)
