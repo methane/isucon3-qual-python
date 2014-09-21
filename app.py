@@ -12,14 +12,12 @@ from flask import (
 
 import meinheld.server
 import memcache
-from redis import StrictRedis
 from flask_memcache_session import Session
 #from werkzeug.contrib.fixers import ProxyFix
 
 import json, os, hashlib, tempfile, subprocess, time
 import misaka
 
-redis = StrictRedis()
 markdown = misaka.Markdown(misaka.HtmlRenderer())
 
 config = {}
@@ -30,6 +28,9 @@ app.cache = memcache.Client(['localhost:11211'], debug=0)
 app.session_interface = Session()
 app.session_cookie_name = "isucon_session_python"
 #app.wsgi_app = ProxyFix(app.wsgi_app)
+
+
+_memolist = []
 
 with open('templates/frame_nouser.html') as f:
     FRAME_A, FRAME_B = f.read().split('{{ content }}')
@@ -97,13 +98,14 @@ def require_user(user):
         abort(403)
 
 
+_md_cache = {}
+
 def gen_markdown(memo_id, md):
-    key = "memo:%s" % (memo_id,)
-    html = app.cache.get(key)
+    html = _md_cache.get(memo_id)
     if html:
         return html
     html = markdown.render(md)
-    app.cache.set(key, html)
+    _md_cache[memo_id] = html
     return html
 
 
@@ -116,28 +118,21 @@ def get_db():
 
 
 def get_memos(page):
-    cache_key = 'page:%d' % (page,)
-    content = app.cache.get(cache_key)
-    if content:
-        return content
-
-    total = redis.llen('memos')
-    start = (page+1)*(-100)
+    total = len(_memolist)
+    start = (page+1)*(-100)-1
     end = (page)*(-100)-1
-    memos = redis.lrange('memos', start, end)
+    memos = _memolist[end:start:-1]
 
     if not memos:
         abort(404)
 
-    memos.reverse()
-    memos = flask.Markup(b'\n'.join(memos).decode('utf-8'))
+    memos = flask.Markup('\n'.join(memos))
     content = flask.Markup(render_template(
         'index.html',
         total=total,
         memos=memos,
         page=page,
     ))
-    app.cache.set(cache_key, content, time=1)
     return content
 
 
@@ -145,8 +140,9 @@ def get_memos(page):
 def top_page():
     user = get_user()
     content = get_memos(0)
+    print(user)
     if not user:
-        return FRAME_A + content + FRAME_B
+        return FRAME_A + str(content) + FRAME_B
     return render_template('frame.html', user=user, content=content)
 
 @app.route("/recent/<int:page>")
@@ -154,7 +150,7 @@ def recent(page):
     user = get_user()
     content = get_memos(page)
     if not user:
-        return FRAME_A + content + FRAME_B
+        return FRAME_A + str(content) + FRAME_B
     return render_template('frame.html', user=user, content=content)
 
 
@@ -275,40 +271,40 @@ def memo_post():
                                   username=user['username'],
                                   created_at=created_at,
                                   )
-        redis.rpush('memos', s.encode('utf-8'))
+        _memolist.append(s)
     gen_markdown(memo_id, content)
     return redirect(url_for('memo', memo_id=memo_id))
 
-def init_memos():
-    with app.app_context():
-        url_list = open('/tmp/urls.txt', 'w')
-        redis.delete('memos')
-        cur  = get_db().cursor()
-        cur.execute('SELECT id, user, content, is_private, created_at, updated_at FROM memos WHERE is_private=0 ORDER BY created_at')
-        memos = cur.fetchall()
-        for memo in memos:
-            if memo['is_private']:
-                gen_markdown(memo['id'], memo['content'])
-                continue
+@app.route('/__init__')
+def _init_():
+    _md_cache.clear()
+    _userid_cache.clear()
+    cur  = get_db().cursor()
 
-            username = get_user_by_id(memo['user'])['username']
-            s = flask.render_template("memo_s.html",
-                                      memo_id=memo['id'],
-                                      content=memo['content'],
-                                      username=username,
-                                      created_at=memo['created_at'],
-                                      )
-            redis.rpush('memos', s.encode('utf-8'))
-            print('http://localhost/memo/%s' % (memo['id'],), file=url_list)
-        url_list.close()
+    cur.execute('SELECT * FROM users')
+    for user in cur:
+        _userid_cache[user['id']] = user
 
+    cur.execute('SELECT id, user, content, is_private, created_at, updated_at FROM memos ORDER BY created_at')
+    memos = cur.fetchall()
+    for memo in memos:
+        gen_markdown(memo['id'], memo['content'])
+        if memo['is_private']:
+            continue
+
+        username = _userid_cache[memo['user']]['username']
+        s = flask.render_template("memo_s.html",
+                                  memo_id=memo['id'],
+                                  content=memo['content'],
+                                  username=username,
+                                  created_at=memo['created_at'],
+                                  )
+        _memolist.append(s)
+    return 'OK'
+
+
+load_config()
 if __name__ == "__main__":
     import sys
-    load_config()
-    if sys.argv[-1] == 'init':
-        init_memos()
-    else:
-        port = int(os.environ.get("PORT", '5000'))
-        app.run(debug=1, host='0.0.0.0', port=port)
-else:
-    load_config()
+    port = int(os.environ.get("PORT", '5000'))
+    app.run(debug=1, host='0.0.0.0', port=port)

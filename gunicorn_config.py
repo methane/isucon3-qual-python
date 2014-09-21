@@ -1,7 +1,7 @@
 import os
 
 errorlog = '-'
-workers = 12
+workers = 1
 keepalive = 120
 worker_class = "meinheld.gmeinheld.MeinheldWorker"
 port = os.environ.get("PORT", '5000')
