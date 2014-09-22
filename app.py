@@ -1,16 +1,11 @@
 from __future__ import with_statement
 
+import codecs
+from collections import defaultdict
+
 import MySQLdb
 from MySQLdb.cursors import DictCursor
 
-#import flask
-#from flask import (
-#    Flask, request, redirect, session, url_for, abort,
-#    render_template, _app_ctx_stack, Response,
-#    after_this_request,
-#)
-
-import codecs
 import jinja2
 from jinja2 import Markup
 import bottle
@@ -120,6 +115,16 @@ def set_memo_cache(memo):
         memo["username"] = get_user_by_id(memo['user'])["username"]
     if 'content_html' not in memo:
         memo["content_html"] = gen_markdown(memo['id'], memo["content"])
+    if 'title' not in memo:
+        memo['title'] = memo['content'].split('\n', 1)[0]
+    if 'title_li' not in memo:
+        s = render_template("memo_s.html",
+                            memo_id=memo['id'],
+                            title=memo['title'],
+                            username=memo['username'],
+                            created_at=memo['created_at'],
+                            )
+        memo['title_li'] = str(s)
     _memo_cache[memo['id']] = memo
 
 
@@ -132,6 +137,8 @@ def get_memo_by_id(memo_id):
         cur.close()
         set_memo_cache(memo)
     return memo
+
+_user_memo = defaultdict(list)
 
 
 def anti_csrf():
@@ -207,12 +214,11 @@ def mypage():
     user, session = get_user()
     if not user:
         abort(403)
-
-    cur = get_db().cursor()
-    cur.execute('SELECT id, content, is_private, created_at, updated_at FROM memos WHERE user=%s ORDER BY created_at DESC', (user["id"],))
-    memos = cur.fetchall()
-    cur.close()
-
+    #cur = get_db().cursor()
+    #cur.execute('SELECT id, content, is_private, created_at, updated_at FROM memos WHERE user=%s ORDER BY created_at DESC', (user["id"],))
+    #memos = cur.fetchall()
+    #cur.close()
+    memos = reversed(_user_memo[user['id']])
     return render_template(
         'mypage.html',
         user=user,
@@ -313,14 +319,6 @@ def memo_post():
     memo_id = db.insert_id()
     cur.close()
     db.commit()
-    if not private:
-        s = render_template("memo_s.html",
-                            memo_id=memo_id,
-                            content=content,
-                            username=user['username'],
-                            created_at=created_at,
-                            )
-        _memolist.append(s)
     memo = {
         'id': memo_id,
         'user': user['id'],
@@ -331,6 +329,9 @@ def memo_post():
         'updated_at': created_at,
     }
     set_memo_cache(memo)
+    _user_memo[user['id']].append(memo)
+    if not private:
+        _memolist.append(memo['title_li'])
     return redirect("/memo/%s" % (memo_id,))
 
 @app.route('/__init__')
@@ -350,16 +351,11 @@ def _init_():
     f = open('/tmp/memos.txt', 'w')
     for memo in memos:
         set_memo_cache(memo)
+        _user_memo[memo['user']].append(memo)
         if memo['is_private']:
             continue
 
-        s = render_template("memo_s.html",
-                            memo_id=memo['id'],
-                            content=memo['content'],
-                            username=memo['username'],
-                            created_at=memo['created_at'],
-                            )
-        _memolist.append(s)
+        _memolist.append(memo['title_li'])
         print('http://localhost/memo/' + str(memo['id']), file=f)
     f.close()
     return 'OK'

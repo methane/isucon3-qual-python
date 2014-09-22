@@ -14,7 +14,7 @@
 <ul>
 {% for memo in memos %}
 <li>
-  <a href="/memo/{{ memo.id }}">{{ memo.content.split('\n')[0] }}</a> {{ memo.created_at }}
+  <a href="/memo/{{ memo.id }}">{{ memo.title }}</a> {{ memo.created_at }}
 {% if memo.is_private == 1 %}
 [private]
 {% endif %}
