@@ -24,7 +24,6 @@ body {
 <div class="nav-collapse">
 <ul class="nav">
 <li><a href="/">Home</a></li>
-{% if user %}
 <li><a href="/mypage">MyPage</a></li>
 <li>
   <form action="/signout" method="post">
@@ -32,9 +31,6 @@ body {
     <input type="submit" value="SignOut">
   </form>
 </li>
-{% else %}
-<li><a href="/signin">SignIn</a></li>
-{% endif %}
 </ul>
 </div> <!--/.nav-collapse -->
 </div>
@@ -44,7 +40,7 @@ body {
 <div class="container">
 <h2>Hello {{ user.username }}!</h2>
 
-{{ content }}
+{{ content|safe }}
 
 </div> <!-- /container -->
 

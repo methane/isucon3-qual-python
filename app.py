@@ -48,6 +48,9 @@ _last_public = None
 with open('templates/frame_nouser.html') as f:
     FRAME_A, FRAME_B = f.read().split('{{ content }}')
 
+index_frame = jinja_env.get_template('frame.html')
+
+
 def load_config():
     global config
     print("Loading configuration")
@@ -207,7 +210,7 @@ def recent(page):
     content = get_memos(page)
     if not user:
         return FRAME_A + str(content) + FRAME_B
-    return render_template('frame.html', user=user, content=Markup(content), session=session)
+    return index_frame.render(user=user, content=content, session=session)
 
 
 @app.route("/mypage")
