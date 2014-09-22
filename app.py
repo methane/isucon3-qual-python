@@ -1,10 +1,14 @@
-from __future__ import with_statement
+from __future__ import print_function
 
 import codecs
 from collections import defaultdict
 
-import MySQLdb
-from MySQLdb.cursors import DictCursor
+try:
+    import MySQLdb
+    from MySQLdb.cursors import DictCursor
+except ImportError:
+    import pymysql as MySQLdb
+    from pymysql.cursors import DictCursor
 
 import jinja2
 from jinja2 import Markup
@@ -25,9 +29,10 @@ def render_template(name, **kwargs):
 #from flask_memcache_session import Session
 
 import json, os, hashlib, tempfile, subprocess, time
-import misaka
 
+import misaka
 markdown = misaka.Markdown(misaka.HtmlRenderer())
+#import mistune
 
 config = {}
 
@@ -49,6 +54,8 @@ with open('templates/frame_nouser.html') as f:
     FRAME_A, FRAME_B = f.read().split('{{ content }}')
 
 index_frame = jinja_env.get_template('frame.html')
+mypage_tmpl = jinja_env.get_template('mypage.html')
+memo_tmpl = jinja_env.get_template('memo.html')
 
 
 def load_config():
@@ -163,6 +170,7 @@ def gen_markdown(memo_id, md):
     if html:
         return html
     html = markdown.render(md)
+    #html = mistune.markdown(md)
     _md_cache[memo_id] = html
     return html
 
@@ -223,8 +231,7 @@ def mypage():
     #memos = cur.fetchall()
     #cur.close()
     memos = reversed(_user_memo[user['id']])
-    return render_template(
-        'mypage.html',
+    return mypage_tmpl.render(
         user=user,
         memos=memos,
         session=session,
@@ -244,7 +251,7 @@ def signin_post():
     cur  = get_db().cursor()
     cur.execute('SELECT id, username, password, salt FROM users WHERE username=%s', (username,))
     user = cur.fetchone()
-    if user and user["password"] == hashlib.sha256(bytes(user["salt"] + password, 'UTF-8')).hexdigest():
+    if user and user["password"] == hashlib.sha256((user["salt"] + password).encode('utf-8')).hexdigest():
         session = {}
         session["user_id"] = user["id"]
         session["token"] = codecs.encode(os.urandom(10), 'hex').decode('ascii')
@@ -297,8 +304,7 @@ def memo(memo_id):
     #if newer_memos:
     #    newer = newer_memos[0]
 
-    return render_template(
-        "memo.html",
+    return memo_tmpl.render(
         user=user,
         memo=memo,
         older=older,
