@@ -23,7 +23,7 @@ markdown = misaka.Markdown(misaka.HtmlRenderer())
 config = {}
 
 app = Flask(__name__, static_url_path='')
-app.debug = False
+app.debug = True
 app.cache = memcache.Client(['localhost:11211'], debug=0)
 app.session_interface = Session()
 app.session_cookie_name = "isucon_session_python"
@@ -56,6 +56,7 @@ def connect_db():
             passwd=password,
             cursorclass=DictCursor,
             charset="utf8",
+            unix_socket='/var/lib/mysql/mysql.sock',
             autocommit=True)
     return db
 
@@ -85,6 +86,27 @@ def get_user_by_id(user_id):
     cur.close()
     _userid_cache[user_id] = user
     return user
+
+
+_memo_cache = {}
+
+def set_memo_cache(memo):
+    if 'username' not in memo:
+        memo["username"] = get_user_by_id(memo['user'])["username"]
+    if 'content_html' not in memo:
+        memo["content_html"] = gen_markdown(memo['id'], memo["content"])
+    _memo_cache[memo['id']] = memo
+
+
+def get_memo_by_id(memo_id):
+    memo = _memo_cache.get(memo_id)
+    if not memo:
+        cur = get_db().cursor()
+        cur.execute('SELECT id, user, content, is_private, created_at, updated_at FROM memos WHERE id=%s', (memo_id,))
+        memo = cur.fetchone()
+        cur.close()
+        set_memo_cache(memo)
+    return memo
 
 
 def anti_csrf():
@@ -117,6 +139,16 @@ def get_db():
     return _db
 
 
+memos_templ = """\
+<h3>public memos</h3>
+<p id="pager">
+  recent {start} - {end} / total <span id="total">{total}</span>
+</p>
+<ul id="memos">
+{memos}
+</ul>
+"""
+
 def get_memos(page):
     total = len(_memolist)
     start = (page+1)*(-100)-1
@@ -126,24 +158,14 @@ def get_memos(page):
     if not memos:
         abort(404)
 
-    memos = flask.Markup('\n'.join(memos))
-    content = flask.Markup(render_template(
-        'index.html',
-        total=total,
-        memos=memos,
-        page=page,
-    ))
+    memos = '\n'.join(memos)
+    content = memos_templ.format(start=page*100+1, end=page*100+100, total=total, memos=memos)
     return content
 
 
 @app.route("/")
 def top_page():
-    user = get_user()
-    content = get_memos(0)
-    print(user)
-    if not user:
-        return FRAME_A + str(content) + FRAME_B
-    return render_template('frame.html', user=user, content=content)
+    return recent(0)
 
 @app.route("/recent/<int:page>")
 def recent(page):
@@ -151,7 +173,7 @@ def recent(page):
     content = get_memos(page)
     if not user:
         return FRAME_A + str(content) + FRAME_B
-    return render_template('frame.html', user=user, content=content)
+    return render_template('frame.html', user=user, content=flask.Markup(content))
 
 
 @app.route("/mypage")
@@ -208,9 +230,7 @@ def signout():
 def memo(memo_id):
     user = get_user()
 
-    cur  = get_db().cursor()
-    cur.execute('SELECT id, user, content, is_private, created_at, updated_at FROM memos WHERE id=%s', (memo_id,))
-    memo = cur.fetchone()
+    memo = get_memo_by_id(memo_id)
     if not memo:
         abort(404)
 
@@ -218,8 +238,6 @@ def memo(memo_id):
         if not user or user["id"] != memo["user"]:
             abort(404)
 
-    memo["username"] = get_user_by_id(memo['user'])["username"]
-    memo["content_html"] = gen_markdown(memo['id'], memo["content"])
     if user and user["id"] == memo["user"]:
         cond = ""
     else:
@@ -227,6 +245,7 @@ def memo(memo_id):
     memos = []
     older = None
     newer = None
+    cur  = get_db().cursor()
     cur.execute("SELECT id FROM memos WHERE user=%s " + cond + " AND id<%s ORDER BY id DESC LIMIT 1", (memo["user"], memo['id']))
     older_memos = cur.fetchall()
     cur.execute("SELECT id FROM memos WHERE user=%s " + cond + " AND id>%s ORDER BY id LIMIT 1", (memo["user"], memo['id']))
@@ -279,6 +298,7 @@ def memo_post():
 def _init_():
     _md_cache.clear()
     _userid_cache.clear()
+    _memo_cache.clear()
     cur  = get_db().cursor()
 
     cur.execute('SELECT * FROM users')
@@ -287,19 +307,21 @@ def _init_():
 
     cur.execute('SELECT id, user, content, is_private, created_at, updated_at FROM memos ORDER BY created_at')
     memos = cur.fetchall()
+    f = open('/tmp/memos.txt', 'w')
     for memo in memos:
-        gen_markdown(memo['id'], memo['content'])
+        set_memo_cache(memo)
         if memo['is_private']:
             continue
 
-        username = _userid_cache[memo['user']]['username']
         s = flask.render_template("memo_s.html",
                                   memo_id=memo['id'],
                                   content=memo['content'],
-                                  username=username,
+                                  username=memo['username'],
                                   created_at=memo['created_at'],
                                   )
         _memolist.append(s)
+        print('http://localhost/memo/' + str(memo['id']), file=f)
+    f.close()
     return 'OK'
 
 

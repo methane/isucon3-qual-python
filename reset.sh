@@ -2,4 +2,4 @@
 sudo rm -rf /var/log/nginx/*
 sudo rm -rf /dev/shm/nginx-cache
 sudo service nginx restart
-#cat /tmp/urls.txt | xargs -P4 curl -s > /dev/null
+time cat /tmp/memos.txt | xargs curl -s > /dev/null

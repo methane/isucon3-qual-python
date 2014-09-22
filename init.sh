@@ -8,6 +8,5 @@ exec 2>&1
 id
 mysql -uisucon isucon < /home/isu-user/isucon/init.sql
 echo "flush_all" | nc 127.0.0.1 11211
-cd /home/isu-user/isucon/webapp/python
-python /home/isu-user/isucon/webapp/python/app.py init
+curl http://localhost/__init__
 /home/isu-user/isucon/webapp/python/reset.sh
