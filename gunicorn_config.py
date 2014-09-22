@@ -2,7 +2,7 @@ import os
 
 #accesslog = '-'
 errorlog = '-'
-keepalive = 120
+keepalive = 60
 worker_class = "meinheld.gmeinheld.MeinheldWorker"
 port = os.environ.get("PORT", '5000')
 #bind = '0.0.0.0:' + port

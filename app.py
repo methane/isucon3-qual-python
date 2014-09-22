@@ -183,6 +183,7 @@ def get_memos(page):
 def top_page():
     return recent(0)
 
+
 @app.route("/recent/<page:int>")
 def recent(page):
     user, session = get_user()
@@ -195,7 +196,8 @@ def recent(page):
 @app.route("/mypage")
 def mypage():
     user, session = get_user()
-    require_user(user)
+    if not user:
+        abort(403)
 
     cur = get_db().cursor()
     cur.execute('SELECT id, content, is_private, created_at, updated_at FROM memos WHERE user=%s ORDER BY created_at DESC', (user["id"],))
@@ -208,6 +210,7 @@ def mypage():
         memos=memos,
         session=session,
     )
+
 
 @app.route("/signin", method='GET')
 def signin():
@@ -225,8 +228,8 @@ def signin_post():
     if user and user["password"] == hashlib.sha256(bytes(user["salt"] + password, 'UTF-8')).hexdigest():
         session = {}
         session["user_id"] = user["id"]
-        session["token"] = hashlib.sha256(os.urandom(40)).hexdigest()
-        session_id = codecs.encode(os.urandom(40), 'hex').decode('ascii')
+        session["token"] = codecs.encode(os.urandom(10), 'hex').decode('ascii')
+        session_id = codecs.encode(os.urandom(30), 'hex').decode('ascii')
         _sessions[session_id] = session
         response.set_cookie(SESSION_COOKIE_NAME, session_id, httponly=True)
         return redirect("/mypage")
@@ -281,10 +284,12 @@ def memo(memo_id):
         session=session,
     )
 
+
 @app.route("/memo", method='POST')
 def memo_post():
     user, token = get_user()
-    require_user(user)
+    if not user:
+        abort(403)
     anti_csrf()
     private = int(request.forms.get("is_private") or 0)
     content = request.forms["content"]
@@ -307,7 +312,16 @@ def memo_post():
                             created_at=created_at,
                             )
         _memolist.append(s)
-    gen_markdown(memo_id, content)
+    memo = {
+        'id': memo_id,
+        'user': user['id'],
+        'username': user['username'],
+        'is_private': private,
+        'content': content,
+        'created_at': created_at,
+        'updated_at': created_at,
+    }
+    set_memo_cache(memo)
     return redirect("/memo/%s" % (memo_id,))
 
 @app.route('/__init__')
