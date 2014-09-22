@@ -3,17 +3,25 @@ from __future__ import with_statement
 import MySQLdb
 from MySQLdb.cursors import DictCursor
 
-import flask
-from flask import (
-    Flask, request, redirect, session, url_for, abort,
-    render_template, _app_ctx_stack, Response,
-    after_this_request,
+#import flask
+#from flask import (
+#    Flask, request, redirect, session, url_for, abort,
+#    render_template, _app_ctx_stack, Response,
+#    after_this_request,
+#)
+
+import codecs
+from jinja2 import Markup
+import bottle
+from bottle import (
+    request, response, redirect, abort, jinja2_template,
 )
 
-import meinheld.server
-import memcache
-from flask_memcache_session import Session
-#from werkzeug.contrib.fixers import ProxyFix
+def render_template(name, **kwargs):
+    return jinja2_template("templates/" + name, **kwargs)
+
+#import memcache
+#from flask_memcache_session import Session
 
 import json, os, hashlib, tempfile, subprocess, time
 import misaka
@@ -22,13 +30,16 @@ markdown = misaka.Markdown(misaka.HtmlRenderer())
 
 config = {}
 
-app = Flask(__name__, static_url_path='')
-app.debug = True
-app.cache = memcache.Client(['localhost:11211'], debug=0)
-app.session_interface = Session()
-app.session_cookie_name = "isucon_session_python"
+app = bottle.app()
+#app = Flask(__name__, static_url_path='')
+#app.debug = True
+#app.cache = memcache.Client(['localhost:11211'], debug=0)
+#app.session_interface = Session()
+#app.session_cookie_name = "isucon_session_python"
 #app.wsgi_app = ProxyFix(app.wsgi_app)
+_sessions = {}
 
+SESSION_COOKIE_NAME = "isucon_session_python"
 
 _memolist = []
 
@@ -61,17 +72,22 @@ def connect_db():
     return db
 
 
+def get_session():
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id is None:
+        return None
+    return _sessions.get(session_id)
+
+
 def get_user():
-    user_id = session.get('user_id')
-    user = None
-    if user_id:
-        user = get_user_by_id(user_id)
-    if user:
-        @after_this_request
-        def add_header(response):
-            response.headers['Cache-Control'] = 'private'
-            return response
-    return user
+    session = get_session()
+    if not session:
+        response.delete_cookie(SESSION_COOKIE_NAME)
+        return None, None
+    user = get_user_by_id(session['user_id'])
+    if user is not None:
+        response.headers['Cache-Control'] = 'private'
+    return user, session
 
 
 _userid_cache = {}
@@ -110,13 +126,13 @@ def get_memo_by_id(memo_id):
 
 
 def anti_csrf():
-    if request.form['sid'] != session['token']:
+    session = get_session()
+    if request.forms['sid'] != session.get('token'):
         abort(400)
 
 
 def require_user(user):
     if not user:
-        redirect(url_for("top_page"))
         abort(403)
 
 
@@ -167,18 +183,18 @@ def get_memos(page):
 def top_page():
     return recent(0)
 
-@app.route("/recent/<int:page>")
+@app.route("/recent/<page:int>")
 def recent(page):
-    user = get_user()
+    user, session = get_user()
     content = get_memos(page)
     if not user:
         return FRAME_A + str(content) + FRAME_B
-    return render_template('frame.html', user=user, content=flask.Markup(content))
+    return render_template('frame.html', user=user, content=Markup(content), session=session)
 
 
 @app.route("/mypage")
 def mypage():
-    user  = get_user()
+    user, session = get_user()
     require_user(user)
 
     cur = get_db().cursor()
@@ -190,45 +206,44 @@ def mypage():
         'mypage.html',
         user=user,
         memos=memos,
+        session=session,
     )
 
-@app.route("/signin", methods=['GET','HEAD'])
+@app.route("/signin", method='GET')
 def signin():
-    user = get_user()
-    return render_template('signin.html', user=user)
+    user, session = get_user()
+    return render_template('signin.html', user=user, session=session)
 
 
-@app.route("/signin", methods=['POST'])
+@app.route("/signin", method='POST')
 def signin_post():
-    db  = get_db()
-    cur = db.cursor()
-    username = request.form['username']
-    password = request.form['password']
+    username = request.forms['username']
+    password = request.forms['password']
+    cur  = get_db().cursor()
     cur.execute('SELECT id, username, password, salt FROM users WHERE username=%s', (username,))
     user = cur.fetchone()
     if user and user["password"] == hashlib.sha256(bytes(user["salt"] + password, 'UTF-8')).hexdigest():
+        session = {}
         session["user_id"] = user["id"]
         session["token"] = hashlib.sha256(os.urandom(40)).hexdigest()
-        return redirect(url_for("mypage"))
+        session_id = codecs.encode(os.urandom(40), 'hex').decode('ascii')
+        _sessions[session_id] = session
+        response.set_cookie(SESSION_COOKIE_NAME, session_id, httponly=True)
+        return redirect("/mypage")
     else:
-        return render_template('signin.html', user=None)
+        return render_template('signin.html', user=None, session={})
 
 
-@app.route("/signout", methods=['POST'])
+@app.route("/signout", method='POST')
 def signout():
     anti_csrf()
-    session.clear()
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return redirect("/")
 
-    @after_this_request
-    def remove_cookie(response):
-        response.set_cookie(app.session_cookie_name, "", expires=0)
-        return response
 
-    return redirect(url_for("top_page"))
-
-@app.route("/memo/<int:memo_id>")
+@app.route("/memo/<memo_id:int>")
 def memo(memo_id):
-    user = get_user()
+    user, session = get_user()
 
     memo = get_memo_by_id(memo_id)
     if not memo:
@@ -263,15 +278,16 @@ def memo(memo_id):
         memo=memo,
         older=older,
         newer=newer,
+        session=session,
     )
 
-@app.route("/memo", methods=['POST'])
+@app.route("/memo", method='POST')
 def memo_post():
-    user = get_user()
+    user, token = get_user()
     require_user(user)
     anti_csrf()
-    private = int(request.form.get("is_private") or 0)
-    content = request.form["content"]
+    private = int(request.forms.get("is_private") or 0)
+    content = request.forms["content"]
     created_at=time.strftime('%Y-%m-%d %H:%M:%S')
 
     db  = get_db()
@@ -284,21 +300,22 @@ def memo_post():
     cur.close()
     db.commit()
     if not private:
-        s = flask.render_template("memo_s.html",
-                                  memo_id=memo_id,
-                                  content=content,
-                                  username=user['username'],
-                                  created_at=created_at,
-                                  )
+        s = render_template("memo_s.html",
+                            memo_id=memo_id,
+                            content=content,
+                            username=user['username'],
+                            created_at=created_at,
+                            )
         _memolist.append(s)
     gen_markdown(memo_id, content)
-    return redirect(url_for('memo', memo_id=memo_id))
+    return redirect("/memo/%s" % (memo_id,))
 
 @app.route('/__init__')
 def _init_():
     _md_cache.clear()
     _userid_cache.clear()
     _memo_cache.clear()
+    _sessions.clear()
     cur  = get_db().cursor()
 
     cur.execute('SELECT * FROM users')
@@ -313,12 +330,12 @@ def _init_():
         if memo['is_private']:
             continue
 
-        s = flask.render_template("memo_s.html",
-                                  memo_id=memo['id'],
-                                  content=memo['content'],
-                                  username=memo['username'],
-                                  created_at=memo['created_at'],
-                                  )
+        s = render_template("memo_s.html",
+                            memo_id=memo['id'],
+                            content=memo['content'],
+                            username=memo['username'],
+                            created_at=memo['created_at'],
+                            )
         _memolist.append(s)
         print('http://localhost/memo/' + str(memo['id']), file=f)
     f.close()
@@ -329,4 +346,6 @@ load_config()
 if __name__ == "__main__":
     import sys
     port = int(os.environ.get("PORT", '5000'))
-    app.run(debug=1, host='0.0.0.0', port=port)
+    #app.run(debug=1, host='0.0.0.0', port=port)
+    _init_()
+    bottle.run(host='0.0.0.0', port=port, debug=True)

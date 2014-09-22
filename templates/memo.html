@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "templates/base.html" %}
 
 {% block content %}
 <p id="author">
@@ -12,16 +12,16 @@ Memo by {{ memo['username'] }} ({{ memo['created_at'] }})
 
 <hr>
 {% if older %}
-<a id="older" href="{{ url_for('memo', memo_id=older['id'], _external=True) }}">&lt; older memo</a>
+<a id="older" href="/memo/{{ older['id'] }}">&lt; older memo</a>
 {% endif %}
 |
 {% if newer %}
-<a id="newer" href="{{ url_for('memo', memo_id=newer['id'], _external=True) }}">newer memo &gt;</a>
+<a id="newer" href="/memo/{{ newer['id'] }}">newer memo &gt;</a>
 {% endif %}
 
 <hr>
 <div id="content_html">
-{% autoescape false %}{{ memo.content_html }}{% endautoescape %}
+{{ memo.content_html }}
 </div>
 {% endblock %}
 

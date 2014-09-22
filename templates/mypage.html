@@ -1,8 +1,8 @@
-{% extends "base.html" %}
+{% extends "templates/base.html" %}
 
 {% block content %}
-<form action="{{ url_for('memo_post', _external=True) }}" method="post">
-  <input type="hidden" name="sid" value="{{ session.get('token') }}">
+<form action="/memo" method="post">
+  <input type="hidden" name="sid" value="{{ session.token }}">
   <textarea name="content"></textarea>
   <br>
   <input type="checkbox" name="is_private" value="1"> private
@@ -14,7 +14,7 @@
 <ul>
 {% for memo in memos %}
 <li>
-  <a href="{{ url_for('memo', memo_id=memo.id, _external=True) }}">{{ memo.content.split('\n')[0] }}</a> {{ memo.created_at }}
+  <a href="/memo/{{ memo.id }}">{{ memo.content.split('\n')[0] }}</a> {{ memo.created_at }}
 {% if memo.is_private == 1 %}
 [private]
 {% endif %}
