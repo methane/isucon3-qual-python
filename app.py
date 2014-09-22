@@ -11,14 +11,20 @@ from MySQLdb.cursors import DictCursor
 #)
 
 import codecs
+import jinja2
 from jinja2 import Markup
 import bottle
 from bottle import (
     request, response, redirect, abort, jinja2_template,
 )
 
+
+jinja_env = jinja2.Environment(autoescape=True, loader=jinja2.FileSystemLoader("templates"),
+                               extensions=['jinja2.ext.autoescape'], auto_reload=False)
+
 def render_template(name, **kwargs):
-    return jinja2_template("templates/" + name, **kwargs)
+    return jinja_env.get_template(name).render(**kwargs)
+    #return jinja2_template("templates/" + name, **kwargs)
 
 #import memcache
 #from flask_memcache_session import Session
@@ -76,13 +82,16 @@ def get_session():
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if session_id is None:
         return None
-    return _sessions.get(session_id)
+    sess = _sessions.get(session_id)
+    if sess is None:
+        #raise Exception("Session %s is not found" % (session_id,))
+        response.delete_cookie(SESSION_COOKIE_NAME)
+    return sess
 
 
 def get_user():
     session = get_session()
     if not session:
-        response.delete_cookie(SESSION_COOKIE_NAME)
         return None, None
     user = get_user_by_id(session['user_id'])
     if user is not None:
@@ -232,7 +241,7 @@ def signin_post():
         session_id = codecs.encode(os.urandom(30), 'hex').decode('ascii')
         _sessions[session_id] = session
         response.set_cookie(SESSION_COOKIE_NAME, session_id, httponly=True)
-        return redirect("/mypage")
+        return redirect("http://localhost/mypage")
     else:
         return render_template('signin.html', user=None, session={})
 
@@ -362,4 +371,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", '5000'))
     #app.run(debug=1, host='0.0.0.0', port=port)
     _init_()
-    bottle.run(host='0.0.0.0', port=port, debug=True)
+    bottle.run(host='0.0.0.0', port=port, debug=False, quiet=True)

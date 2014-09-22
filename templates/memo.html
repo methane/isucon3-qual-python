@@ -1,4 +1,4 @@
-{% extends "templates/base.html" %}
+{% extends "base.html" %}
 
 {% block content %}
 <p id="author">
@@ -21,7 +21,7 @@ Memo by {{ memo['username'] }} ({{ memo['created_at'] }})
 
 <hr>
 <div id="content_html">
-{{ memo.content_html }}
+{% autoescape off %}{{ memo.content_html }}{% endautoescape %}
 </div>
 {% endblock %}
 
