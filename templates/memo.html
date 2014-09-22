@@ -12,11 +12,11 @@ Memo by {{ memo['username'] }} ({{ memo['created_at'] }})
 
 <hr>
 {% if older %}
-<a id="older" href="/memo/{{ older['id'] }}">&lt; older memo</a>
+<a id="older" href="http://localhost/memo/{{ older['id'] }}">&lt; older memo</a>
 {% endif %}
 |
 {% if newer %}
-<a id="newer" href="/memo/{{ newer['id'] }}">newer memo &gt;</a>
+<a id="newer" href="http://localhost/memo/{{ newer['id'] }}">newer memo &gt;</a>
 {% endif %}
 
 <hr>
