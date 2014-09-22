@@ -43,6 +43,7 @@ _sessions = {}
 SESSION_COOKIE_NAME = "isucon_session_python"
 
 _memolist = []
+_last_public = None
 
 with open('templates/frame_nouser.html') as f:
     FRAME_A, FRAME_B = f.read().split('{{ content }}')
@@ -271,24 +272,27 @@ def memo(memo_id):
         if not user or user["id"] != memo["user"]:
             abort(404)
 
-    if user and user["id"] == memo["user"]:
-        cond = ""
+    show_private = user and user['id'] == memo['user']
+    #if user and user["id"] == memo["user"]:
+    #    cond = ""
+    #else:
+    #    cond = "AND is_private=0"
+    if show_private:
+        older = memo['prev_private']
+        newer = memo['next_private']
     else:
-        cond = "AND is_private=0"
-    memos = []
-    older = None
-    newer = None
-    cur  = get_db().cursor()
-    cur.execute("SELECT id FROM memos WHERE user=%s " + cond + " AND id<%s ORDER BY id DESC LIMIT 1", (memo["user"], memo['id']))
-    older_memos = cur.fetchall()
-    cur.execute("SELECT id FROM memos WHERE user=%s " + cond + " AND id>%s ORDER BY id LIMIT 1", (memo["user"], memo['id']))
-    newer_memos = cur.fetchall()
-    cur.close()
-
-    if older_memos:
-        older = older_memos[0]
-    if newer_memos:
-        newer = newer_memos[0]
+        older = memo['prev_id']
+        newer = memo['next_id']
+    #cur  = get_db().cursor()
+    #cur.execute("SELECT id FROM memos WHERE user=%s " + cond + " AND id<%s ORDER BY id DESC LIMIT 1", (memo["user"], memo['id']))
+    #older_memos = cur.fetchall()
+    #cur.execute("SELECT id FROM memos WHERE user=%s " + cond + " AND id>%s ORDER BY id LIMIT 1", (memo["user"], memo['id']))
+    #newer_memos = cur.fetchall()
+    #cur.close()
+    #if older_memos:
+    #    older = older_memos[0]
+    #if newer_memos:
+    #    newer = newer_memos[0]
 
     return render_template(
         "memo.html",
@@ -302,6 +306,7 @@ def memo(memo_id):
 
 @app.route("/memo", method='POST')
 def memo_post():
+    global _last_public
     user, token = get_user()
     if not user:
         abort(403)
@@ -318,7 +323,6 @@ def memo_post():
     )
     memo_id = db.insert_id()
     cur.close()
-    db.commit()
     memo = {
         'id': memo_id,
         'user': user['id'],
@@ -329,9 +333,26 @@ def memo_post():
         'updated_at': created_at,
     }
     set_memo_cache(memo)
-    _user_memo[user['id']].append(memo)
+    ul = _user_memo[user['id']]
+    memo['prev_id'] = memo['next_id'] = None
+    memo['prev_private'] = memo['next_private'] = None
+    if ul:
+        ul[-1]['next_private'] = memo['id']
+        memo['prev_private'] = ul[-1]['id']
+        for m in reversed(ul):
+            if not m['is_private']:
+                m['next_id'] = memo['id']
+                memo['prev_id'] = m['id']
+                break
+
+    ul.append(memo)
     if not private:
         _memolist.append(memo['title_li'])
+        if _last_public:
+            memo['prev_id'] = _last_public['id']
+            _last_public['next_id'] = memo['id']
+        _last_public = memo
+
     return redirect("/memo/%s" % (memo_id,))
 
 @app.route('/__init__')
@@ -340,6 +361,7 @@ def _init_():
     _userid_cache.clear()
     _memo_cache.clear()
     _sessions.clear()
+    _user_memo.clear()
     cur  = get_db().cursor()
 
     cur.execute('SELECT * FROM users')
@@ -350,6 +372,8 @@ def _init_():
     memos = cur.fetchall()
     f = open('/tmp/memos.txt', 'w')
     for memo in memos:
+        memo['next_id'] = memo['prev_id'] = None
+        memo['next_private'] = memo['prev_private'] = None
         set_memo_cache(memo)
         _user_memo[memo['user']].append(memo)
         if memo['is_private']:
@@ -358,6 +382,20 @@ def _init_():
         _memolist.append(memo['title_li'])
         print('http://localhost/memo/' + str(memo['id']), file=f)
     f.close()
+
+    for uid, memos in _user_memo.items():
+        for a, b in zip(memos, memos[1:]):
+            a['next_private'] = b['id']
+            b['prev_private'] = a['id']
+        last_public = None
+        for m in memos:
+            if m['is_private']:
+                continue
+            if last_public is not None:
+                last_public['next_id'] = m['id']
+                m['prev_id'] = last_public['id']
+            last_public = m
+
     return 'OK'
 
 
